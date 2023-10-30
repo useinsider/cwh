@@ -1,6 +1,6 @@
 <?php
 
-namespace PhpNexus\Cwh\Handler;
+namespace Insider\Cwh\Handler;
 
 use Aws\CloudWatchLogs\CloudWatchLogsClient;
 use Monolog\Formatter\FormatterInterface;

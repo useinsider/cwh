@@ -1,6 +1,6 @@
 {
-    "name": "phpnexus/cwh",
-    "homepage": "https://github.com/phpnexus/cwh",
+    "name": "useinsider/cwh",
+    "homepage": "https://github.com/useinsider/cwh",
     "type": "library",
     "description": "AWS CloudWatch Handler for Monolog library",
     "keywords": [
@@ -20,8 +20,8 @@
         "test": "phpunit"
     },
     "support": {
-        "issues": "https://github.com/phpnexus/cwh/issues",
-        "source": "https://github.com/phpnexus/cwh"
+        "issues": "https://github.com/useinsider/cwh/issues",
+        "source": "https://github.com/useinsider/cwh"
     },
     "require": {
         "php": ">=8.1",
@@ -40,7 +40,12 @@
     },
     "autoload": {
         "psr-4": {
-            "PhpNexus\\Cwh\\": "src"
+            "Insider\\Cwh\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Insider\\Cwh\\Tests\\": "tests"
         }
     },
     "minimum-stability": "stable"

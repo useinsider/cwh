@@ -1,11 +1,11 @@
 <?php
 
-namespace PhpNexus\Cwh\Test\Handler;
+namespace Insider\Cwh\Handler;
 
 use Aws\CloudWatchLogs\CloudWatchLogsClient;
 use Aws\CloudWatchLogs\Exception\CloudWatchLogsException;
 use Aws\Result;
-use PhpNexus\Cwh\Handler\CloudWatch;
+use Insider\Cwh\Handler\CloudWatch;
 use Monolog\Formatter\LineFormatter;
 use Monolog\LogRecord;
 use Monolog\Level;
