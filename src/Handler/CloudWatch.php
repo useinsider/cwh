@@ -6,8 +6,6 @@ use Aws\CloudWatchLogs\CloudWatchLogsClient;
 use Monolog\Formatter\FormatterInterface;
 use Monolog\Formatter\LineFormatter;
 use Monolog\Handler\AbstractProcessingHandler;
-use Monolog\LogRecord;
-use Monolog\Level;
 
 class CloudWatch extends AbstractProcessingHandler
 {
@@ -44,7 +42,7 @@ class CloudWatch extends AbstractProcessingHandler
     private int $currentDataAmount = 0;
     private int $remainingRequests;
     private \DateTimeImmutable $savedTime;
-    private int | null $earliestTimestamp = null;
+    private int|null $earliestTimestamp = null;
 
     /**
      * CloudWatchLogs constructor.
@@ -61,17 +59,18 @@ class CloudWatch extends AbstractProcessingHandler
      */
     public function __construct(
         CloudWatchLogsClient $client,
-        string $group,
-        string $stream,
-        int $retention = 14,
-        int $batchSize = 10000,
-        array $tags = [],
-        int | string | Level $level = Level::Debug,
-        bool $bubble = true,
-        bool $createGroup = true,
-        bool $createStream = true,
-        int $rpsLimit = 0
-    ) {
+        string               $group,
+        string               $stream,
+        int                  $retention = 14,
+        int                  $batchSize = 10000,
+        array                $tags = [],
+                             $level = Logger::DEBUG,
+        bool                 $bubble = true,
+        bool                 $createGroup = true,
+        bool                 $createStream = true,
+        int                  $rpsLimit = 0
+    )
+    {
         if ($batchSize > 10000) {
             throw new \InvalidArgumentException('Batch size can not be greater than 10000');
         }
@@ -93,7 +92,7 @@ class CloudWatch extends AbstractProcessingHandler
         $this->savedTime = new \DateTimeImmutable();
     }
 
-    protected function write(LogRecord $record): void
+    protected function write(array $record): void
     {
         $records = $this->formatRecords($record);
 
@@ -204,7 +203,7 @@ class CloudWatch extends AbstractProcessingHandler
      * Event size in the batch can not be bigger than 256 KB
      * https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/cloudwatch_limits_cwl.html
      */
-    private function formatRecords(LogRecord $entry): array
+    private function formatRecords(array $entry): array
     {
         $entries = str_split($entry['formatted'], self::EVENT_SIZE_LIMIT);
         $timestamp = $entry['datetime']->format('U.u') * 1000;
@@ -332,7 +331,7 @@ class CloudWatch extends AbstractProcessingHandler
 
     protected function getDefaultFormatter(): FormatterInterface
     {
-        return new LineFormatter("%channel%: %level_name%: %message% %context% %extra%", null, false, true);
+        return new LineFormatter('%channel%: %level_name%: %message% %context% %extra%', null, false, true);
     }
 
     public function close(): void

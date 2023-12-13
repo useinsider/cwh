@@ -24,8 +24,8 @@
         "source": "https://github.com/useinsider/cwh"
     },
     "require": {
-        "php": ">=8.1",
-        "monolog/monolog": "^3.0",
+        "php": "^7.2 || ^8",
+        "monolog/monolog": "^2.0",
         "aws/aws-sdk-php": "^3.2"
     },
     "require-dev": {
