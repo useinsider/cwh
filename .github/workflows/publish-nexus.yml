@@ -1,0 +1,65 @@
+name: Publish to Nexus
+
+# INFRA-10140: internal composer packages are served from the Nexus hosted repo so
+# image builds no longer need a GitHub token for `composer install`.
+#
+# Tag push cuts a release. workflow_dispatch backfills a version that was tagged
+# before this workflow existed.
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or commit to publish (e.g. 8.13.26)'
+        required: true
+      version:
+        description: 'Version to register in Nexus. Defaults to ref without a leading v.'
+        required: false
+
+jobs:
+  publish:
+    # Self-hosted so the runner can reach registry.devops.internal.web.
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Resolve version
+        id: resolve
+        run: |
+          RAW="${{ github.event.inputs.version || github.event.inputs.ref || github.ref_name }}"
+          echo "version=${RAW#v}" >> "$GITHUB_OUTPUT"
+
+      # The self-hosted runner image does not ship PHP/composer.
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring, dom, xml, tokenizer
+          tools: composer:v2
+
+      # Nexus registers the version from the archive's composer.json. This repo
+      # does not carry a `version` field (it is derived from git tags), so pin it
+      # in the workspace copy before archiving. Never committed.
+      - name: Pin version into composer.json
+        run: composer config version "${{ steps.resolve.outputs.version }}"
+
+      # composer archive packages the working tree only; no `composer install`
+      # needed, which also keeps the publish path free of any auth.
+      - name: Build dist archive
+        run: composer archive --format=zip --file=package --dir=dist
+
+      # The nexus-repository-composer plugin upload route. The generic
+      # /service/rest/v1/components API rejects composer uploads.
+      - name: Upload to Nexus
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          curl -sSf -u "$NEXUS_USERNAME:$NEXUS_PASSWORD" \
+            --upload-file dist/package.zip \
+            "http://registry.devops.internal.web/repository/composer-selfhosted/packages/upload/useinsider/cwh/${{ steps.resolve.outputs.version }}"
