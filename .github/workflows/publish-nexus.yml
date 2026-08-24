@@ -1,0 +1,126 @@
+name: Publish to Nexus
+
+# INFRA-10140: internal composer packages are served from the Nexus hosted repo so
+# image builds no longer need a GitHub token for `composer install`.
+#
+# Versioning follows Composer's own convention, so Nexus serves what a consumer's
+# composer.json already asks for:
+#   tag v1.2.3 / 1.2.3  ->  1.2.3
+#   branch main|master  ->  dev-main
+#   branch develop      ->  dev-develop
+#   any other branch    ->  dev-<branch>, with '/' flattened to '-'
+#                           (feature/SD-69080 -> dev-feature-SD-69080)
+#
+# The flattening is forced on us: Nexus decodes %2F in the upload path and reads it
+# as a directory separator, which silently truncated feature/INFRA-10140 down to a
+# recorded version of "dev-feature". Consumers must require the flattened form.
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to publish (e.g. develop, feature/SD-69080, 8.13.26)'
+        required: true
+
+permissions:
+  contents: read
+
+# One publish at a time per ref; a re-run should supersede, not race.
+concurrency:
+  group: publish-nexus-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # arc-rcs: runs-on picks size/placement, container: picks the toolchain.
+    # Only these runners resolve registry.devops.internal.web to its in-VPC
+    # address, so the plain-HTTP upload never leaves the VPC.
+    runs-on: ["self-runner:default", team_devops, 2cpu, 2gb]
+    # The composer image already ships PHP, Composer, git and curl. setup-php was
+    # tried first and hung with no output for ~10 minutes — the pod cannot reach
+    # the sources that action downloads PHP from.
+    container: composer:2
+    steps:
+      # Pinned to a commit SHA; a moving tag would let a compromised upstream run
+      # arbitrary code with our Nexus credentials.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          # Full history + tags so the dispatch path can tell a tag from a branch.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The workflow input reaches the shell through the environment, never through
+      # ${{ }} expansion inside the script, which would splice caller-controlled
+      # text into the command line.
+      - name: Resolve version
+        id: resolve
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+          EVENT_REF_TYPE: ${{ github.ref_type }}
+          EVENT_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -eu
+
+          if [ -n "$INPUT_REF" ]; then
+            name="$INPUT_REF"
+            if git rev-parse -q --verify "refs/tags/$name" >/dev/null 2>&1; then
+              kind=tag
+            else
+              kind=branch
+            fi
+          else
+            kind="$EVENT_REF_TYPE"
+            name="$EVENT_REF_NAME"
+          fi
+
+          if [ "$kind" = tag ]; then
+            version="${name#v}"
+          else
+            version="dev-$(printf '%s' "$name" | tr '/' '-')"
+          fi
+
+          case "$version" in
+            ''|*[!A-Za-z0-9._-]*)
+              echo "::error::Refusing version '$version': expected only [A-Za-z0-9._-]"
+              exit 1
+              ;;
+          esac
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing $kind '$name' as version '$version'" >> "$GITHUB_STEP_SUMMARY"
+
+      # Nexus records the version from the archive's composer.json. This repo
+      # derives its version from git rather than carrying a `version` field, so pin
+      # it in the workspace copy before archiving. Never committed.
+      - name: Pin version into composer.json
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: composer config version "$VERSION"
+
+      # composer archive packages the working tree only; no `composer install` is
+      # needed, which also keeps the publish path free of any auth.
+      - name: Build dist archive
+        run: composer archive --format=zip --file=package --dir=dist
+
+      # The nexus-repository-composer plugin upload route; the generic
+      # /service/rest/v1/components API rejects composer uploads.
+      #
+      # Credentials reach curl through a stdin config file so they never appear in
+      # the process list, where another job on this shared runner could read them.
+      - name: Upload to Nexus
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -eu
+          printf 'user = "%s:%s"\n' "$NEXUS_USERNAME" "$NEXUS_PASSWORD" \
+            | curl -sSf --config - \
+                --upload-file dist/package.zip \
+                "http://registry.devops.internal.web/repository/composer-selfhosted/packages/upload/useinsider/cwh/$VERSION"
