@@ -5,13 +5,16 @@ on: [push, pull_request]
 jobs:
   run:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       matrix:
         php-versions: ['8.1']
     name: PHP ${{ matrix.php-versions }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v5
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -25,10 +28,10 @@ jobs:
 
       - name: Get Composer cache directory
         id: composer-cache
-        run: echo "::set-output name=dir::$(composer config cache-files-dir)"
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
       - name: Cache dependencies
-        uses: actions/cache@v1
+        uses: actions/cache@v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
@@ -44,10 +47,51 @@ jobs:
 
       - name: Run tests
         run: vendor/bin/phpunit --coverage-clover build/logs/clover.xml
-          
-      - name: Upload coverage results to Coveralls
+
+      # useinsider/coverus-action is NOT usable here: it lives in an internal
+      # repository, and GitHub refuses to resolve internal actions from a public
+      # one ("Unable to resolve action ..., not found"). This reimplements the
+      # same wire contract inline. Skipped on pull_request because a fork PR
+      # gets no OIDC token, and the head commit is covered by its push event.
+      - name: Upload to Coverus
+        if: github.event_name == 'push'
         env:
-          COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COVERUS_API_URL: https://kube-qa-dataforce.useinsider.com/coverus/api
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          WORKSPACE_PREFIX: ${{ github.workspace }}/
         run: |
-          composer global require php-coveralls/php-coveralls
-          php-coveralls --coverage_clover=build/logs/clover.xml -v
+          set -eo pipefail
+
+          # Coverus indexes files by repo-relative path; phpunit writes absolute ones.
+          sed -e "s|name=\"${WORKSPACE_PREFIX}|name=\"|g" \
+              -e "s|path=\"${WORKSPACE_PREFIX}|path=\"|g" \
+              build/logs/clover.xml | gzip -9 | base64 -w 0 > coverage_encoded.txt
+
+          OIDC_TOKEN=$(curl -sS --retry 3 --retry-all-errors --retry-delay 2 \
+            --connect-timeout 10 --max-time 30 \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=coverus" | jq -r '.value // empty')
+          if [ -z "$OIDC_TOKEN" ]; then
+            echo "::error::could not obtain a GitHub OIDC token for Coverus"
+            exit 1
+          fi
+          echo "::add-mask::$OIDC_TOKEN"
+
+          jq -n --arg branch "$DEFAULT_BRANCH" --arg token "$OIDC_TOKEN" \
+                --rawfile data coverage_encoded.txt \
+            '{coverage_format:"clover", compression:"gzip", default_branch:$branch,
+              github_actions_oidc_token:$token, raw_coverage_data:($data|rtrimstr("\n"))}' \
+            > payload.json
+
+          # No --retry-all-errors: the POST is not idempotent, so a lost response
+          # must not be replayed into a duplicate job.
+          HTTP=$(curl -sS -o response.json -w '%{http_code}' -X POST \
+            --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 120 \
+            -H 'Content-Type: application/json' --data-binary @payload.json \
+            "${COVERUS_API_URL}/v1/jobs/by-github-actions-oidc-token")
+
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Coverus upload failed (HTTP $HTTP): $(cat response.json)"
+            exit 1
+          fi
+          echo "Coverus job $(jq -r '.job_id' response.json) — coverage $(jq -r '.coverage' response.json)%"
