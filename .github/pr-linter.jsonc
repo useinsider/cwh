@@ -1,7 +1,8 @@
 {
-  // PR title must start with a Jira ticket key, e.g. "MES-1234: ..."
-  "title": {
-    "pattern": "^[A-Z]+-[0-9]+:\\s.+",
-    "message": "PR title must start with a Jira ticket key, e.g. 'MES-1234: short description'."
+  "$schema": "https://panel-assets.useinsider.com/pr-linter/schema-v1.9.0.json",
+  "extends": ["smokePass"],
+  "rules": {
+    "assignee": { "count": { "min": 1 } },
+    "labelCountLimit": { "min": 1 }
   }
 }

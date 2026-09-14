@@ -2,13 +2,30 @@ name: PR Linter
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+      - assigned
+      - unassigned
+      - labeled
+      - unlabeled
+
+concurrency:
+  group: pr-linter-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pr-linter:
-    runs-on: ubuntu-latest
+    runs-on: ["self-runner:default", team_vikings]
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      statuses: write
     steps:
-      - name: Checkout
+      - name: Checkout branch
         uses: actions/checkout@v4
 
       - name: Run PR Linter
