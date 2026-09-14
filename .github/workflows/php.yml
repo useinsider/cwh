@@ -1,14 +1,16 @@
 name: Pipeline
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [develop]
 
 jobs:
-  run:
+  unit-tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        php-versions: ['8.1']
-    name: PHP ${{ matrix.php-versions }}
+    name: Unit Tests
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -16,7 +18,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ matrix.php-versions }}
+          php-version: '8.1'
           extensions: mbstring
           coverage: pcov
 
@@ -42,12 +44,43 @@ jobs:
           php -l src/
           vendor/bin/phpcs --standard=psr12 src/ tests/
 
-      - name: Run tests
-        run: vendor/bin/phpunit --coverage-clover build/logs/clover.xml
-          
+      - name: Run unit tests
+        run: vendor/bin/phpunit --testsuite Unit --coverage-clover build/logs/clover.xml
+
       - name: Upload coverage results to Coveralls
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           composer global require php-coveralls/php-coveralls
           php-coveralls --coverage_clover=build/logs/clover.xml -v
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    name: Integration Tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring
+          coverage: pcov
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "::set-output name=dir::$(composer config cache-files-dir)"
+
+      - name: Cache dependencies
+        uses: actions/cache@v1
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-progress -o
+
+      - name: Run integration tests
+        run: vendor/bin/phpunit --testsuite Feature

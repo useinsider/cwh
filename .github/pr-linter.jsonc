@@ -1,0 +1,7 @@
+{
+  // PR title must start with a Jira ticket key, e.g. "MES-1234: ..."
+  "title": {
+    "pattern": "^[A-Z]+-[0-9]+:\\s.+",
+    "message": "PR title must start with a Jira ticket key, e.g. 'MES-1234: short description'."
+  }
+}
