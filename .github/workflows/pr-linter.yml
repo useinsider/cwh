@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run PR Linter
-        uses: useinsider/pr-linter@v1.13.0
+        uses: useinsider/pr-linter@v1.13.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config: '.github/pr-linter.jsonc'
