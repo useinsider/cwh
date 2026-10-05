@@ -1,0 +1,39 @@
+name: Upload to Coverus
+
+on:
+  - push
+
+jobs:
+  coverage:
+    name: Unit Tests Coverage
+    # Coverus is reached from the self-hosted fleet; php.yml runs on
+    # GitHub-hosted ubuntu-latest, so the upload lives in its own workflow.
+    runs-on: ["self-runner:default", team_vikings]
+    container: php:8.4-cli
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # git + unzip for composer, pcov as the coverage driver.
+      - name: Set up PHP toolchain
+        uses: useinsider/arc-rcs/actions/setup-toolchain@main
+        with:
+          packages: git unzip
+          php-extensions: pcov
+          composer: true
+
+      - name: Install Composer Dependencies
+        run: composer install --no-progress -o
+
+      - name: Run unit tests with coverage
+        run: vendor/bin/phpunit --testsuite Unit --coverage-clover build/logs/clover.xml
+
+      - name: Upload to Coverus
+        uses: useinsider/coverus-action@v2.5.0
+        with:
+          coverage-format: clover
+          coverage-file: build/logs/clover.xml
+          strip-path-prefix: /__w/cwh/cwh/
