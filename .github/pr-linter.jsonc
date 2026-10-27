@@ -1,6 +1,6 @@
 {
   "$schema": "https://panel-assets.useinsider.com/pr-linter/schema-v1.9.0.json",
-  "extends": ["smokePass"],
+  "extends": ["smokePass", "testPass"],
   "rules": {
     "assignee": { "count": { "min": 1 } },
     "labelCountLimit": { "min": 1 }
