@@ -1,0 +1,39 @@
+name: Code Lint
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [develop]
+
+concurrency:
+  group: code-lint-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/develop' }}
+
+permissions:
+  contents: read
+
+jobs:
+  code-lint:
+    # The org ruleset matches this name exactly: never rename it, path-filter it or skip it.
+    name: Code Lint
+    # A public fork gets no self-hosted runner and no private useinsider action (useinsider/code-lint),
+    # so this runs PHPCS (PSR-12) on GitHub-hosted ubuntu-latest, as the Pipeline workflow does.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-progress --no-interaction --prefer-dist
+
+      - name: PHPCS (PSR-12)
+        run: vendor/bin/phpcs --standard=psr12 src/ tests/
